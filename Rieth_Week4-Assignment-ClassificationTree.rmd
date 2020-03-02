@@ -1,0 +1,225 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+# Peter Rieth
+## BAN 502, Module 4
+### Assignment:  Classification Tree Assignment
+  
+**Load Libraries**  
+  
+Will use the following libraries: tidyverse, caret, rpart, rattle, and RColorBrewer.  
+  
+```{r load libraries, message=FALSE, warning=FALSE}
+library("tidyverse")
+library("caret")
+library("rpart")
+library("rattle")
+library("RColorBrewer")
+```
+  
+Before beginning the assignment tasks, you should read-in the data for the assignment into a data frame called parole. Carefully convert the male, race, state, crime, multiple.offenses, and violator variables to factors. Recode (rename) the factor levels of each of these variables according to the description of the variables provided in the ParoleData.txt file (located with the assignment on Canvas).
+Note: You did this in a previous assignment. I would encourage you to re-use your code.
+   
+```{r read in Parole data and complete variable conversions and recoding}
+parole <- read_csv("parole.csv")
+parole = parole %>% 
+  mutate(male = as_factor(as.character(male))) %>% #convert male to factor
+  mutate(male = fct_recode(male,
+    "male" = "1",
+    "female" = "0")) %>% #rename male factor levels  
+  mutate(race = as_factor(as.character(race))) %>% #convert race to factor
+  mutate(race = fct_recode(race,
+    "white" = "1",
+    "NOTwhite" = "2")) %>% #rename race factor levels  
+  mutate(state = as_factor(as.character(state))) %>% #convert state to factor
+  mutate(state = fct_recode(state,
+    "OTHERstate" = "1",
+    "Kentucky" = "2",
+    "Louisiana" = "3",
+    "Virginia" = "4")) %>% #rename state factor levels  
+  mutate(crime = as_factor(as.character(crime))) %>% #convert crime to factor
+  mutate(crime = fct_recode(crime,
+    "OTHERcrime" = "1",
+    "larceny" = "2",
+    "drug-related" = "3",
+    "driving-related" = "4")) %>% #rename crime factor levels  
+  mutate(multiple.offenses = as_factor(as.character(multiple.offenses))) %>% #convert multiple.offenses to factor
+  mutate(multiple.offenses = fct_recode(multiple.offenses,
+    "incarcerated" = "1",
+    "NOTincarcerated" = "0")) %>% #rename multiple.offenses factor levels  
+  mutate(violator = as_factor(as.character(violator))) %>% #convert violator to factor
+  mutate(violator = fct_recode(violator,
+    "ViolatedParole" = "1",
+    "CompletedParole" = "0")) #rename violator factor levels  
+str(parole)
+```
+### Task 1:  
+  
+Split the data into training (70%) and testing (30%) sets. Use a random number (set.seed) of 12345.  
+  
+```{r split into training and testing data for parole}
+set.seed(12345) #set random number seed for cross validation
+train.rows = createDataPartition(y = parole$violator, p=0.7, list = FALSE) #70% in training
+train = parole[train.rows,] #training dataset
+test = parole[-train.rows,] #testing dataset
+```
+  
+### Task 2:  
+  
+Create a classification tree using all of the predictor variables to predict “violator” in the training set. Plot the tree.  
+  
+```{r create classification tree for parole}
+tree1 = rpart(violator ~., train, method="class")
+fancyRpartPlot(tree1)
+```
+
+### Task 3:  
+  
+For the tree created in Task 2, how would you classify a 40 year-old parolee from Louisiana who served a 5 year prison sentence? Describe how you “walk through” the classification tree to arrive at your answer.  
+  
+**40 year-old parolee from Louisiana who served a 5 year prison sentence classification:** Well if they were white I'd classify them as CompletedParole and if they were NOTwhite I'd classify them as ViolatedParole.  
+  
+**Walk through the tree:**  
+  
+* Node 1: Answer no and go to right branch to node 2 since Louisiana is not in OTHERState, Kentucky or Virginia
+* Node 2: Now I need more information - because the next question is race.
+  + If the parolee was white: Take the left branch and be done indicating CompletedParole
+  + If the parolee was not white: take the right branch to node 3.
+    - Node 3: Answer yes and go down the left branch to node 4 since time.served of 5 years is greater than or equal to 3.9
+    - Node 4: Answer no and go down right branch and be done indicating ViolatedParole since 40 years old is not <30.
+  
+### Task 4:  
+  
+Use the printcp function to evaluate tree performance as a function of the complexity parameter (cp). What cp value should be selected? Note that the printcp table tends to be a more reliable tool than the plot of cp.  
+  
+**What value of CP should be selected?** 0.030303 has the lowest cross-validated error.  
+  
+```{r print cp for parole}
+printcp(tree1)
+plotcp(tree1)
+```
+
+### Task 5:  
+  
+Prune the tree from Task 2 back to the cp value that you selected in Task 4. **Do not attempt to plot the tree.** You will find that the resulting tree is known as a “root”. A tree that takes the form of a root is essentially a naive model that assumes that the prediction for all observations is the majority class. 
+
+**Which class (category) in the training set is the majority class (i.e., has the most observations)?** CompletedParole
+
+Prune the tree (at minimum cross-validated error)  
+```{r prune the tree for parole to cp for min cross-validated error}
+tree2 = prune(tree1,cp= tree1$cptable[which.min(tree1$cptable[,"xerror"]),"CP"])
+```
+
+### Task 6:  
+  
+Use the unpruned tree from Task 2 to develop predictions for the training data. Use caret’s confusionMatrix function to calculate the accuracy, specificity, and sensitivity of this tree on the training data. Note that we would not, in practice, use an unpruned tree as such a tree is very likely to overfit on new data. 
+
+Predictions on training set  
+```{r predict training set for parole}
+treepred = predict(tree1, train, type = "class")
+head(treepred)
+```
+  
+Caret confusion matrix and accuracy, etc. calcs  
+```{r create confusion matrics and determine accuracy etc for parole training set}
+confusionMatrix(treepred,train$violator,positive="ViolatedParole") #predictions first then actual
+```
+
+### Task 7:  
+  
+Use the unpruned tree from Task 2 to develop predictions for the testing data. Use caret’s confusionMatrix function to calculate the accuracy, specificity, and sensitivity of this tree on the testing data. Comment on the quality of the model. 
+  
+**Comments on quality of of the model:** the accuracy level of the predictions on the training data is 0.9027 which is slightly better than the accuracy of the naive model with no information rate (i.e., if we had just predicted CompletedParole for everything). The accuracy level of the predictions for the testing data is slighty worse at 0.896, but still better than the naive model. Neither the testing or training predictions improvement in accuracy are statistically significant with both values above .05, but this is a relatively small dataset so perhaps this doesn't mean the model isn't usable.
+  
+Predictions on testing set  
+```{r predictions for testing set of parole}
+treepred_test = predict(tree1, newdata=test, type = "class")
+head(treepred_test)
+```
+
+Caret confusion matrix and accuracy, etc. calcs  
+```{r create confusion matrics and determine accuracy etc for parole testing set}
+confusionMatrix(treepred_test,test$violator,positive="ViolatedParole") #predictions first then actual
+```
+
+### Task 8:  
+  
+Read in the “Blood.csv” dataset. The dataset contains five variables:  
+Mnths_Since_Last: Months since last donation  
+TotalDonations: Total number of donation  
+Total_Donated: Total amount of blood donated  
+Mnths_Since_First: Months since first donation  
+DonatedMarch: Binary variable representing whether he/she donated blood in March (1 = Yes, 0 = No)  
+  
+Convert the DonatedMarch variable to a factor and recode the variable so 0 = “No” and 1 = “Yes”.  
+
+```{r read in Blood data and complete variable conversions and recoding}
+blood <- read_csv("Blood.csv")
+blood = blood %>% 
+  mutate(DonatedMarch = as_factor(as.character(DonatedMarch))) %>% #convert DoneateMarch to factor
+  mutate(DonatedMarch = fct_recode(DonatedMarch,
+    "Yes" = "1",
+    "No" = "0")) #rename DonatedMarch factor levels  
+```
+
+### Task 9:  
+  
+Split the dataset into training (70%) and testing (30%) sets. **You may wish to name your training and testing sets “train2” and “test2” so as to not confuse them with the parole datsets.** Use set.seed of 1234. Then develop a classification tree on the training set to predict “DonatedMarch”. Evaluate the complexity parameter (cp) selection for this model.
+
+**Evaluate cp:** cp value of 0.016 has the lowest cross-validated error.  
+
+Split the data into training (70%) and testing (30%) sets. Use a random number (set.seed) of 1234.  
+```{r split into training and testing data for blood}
+set.seed(1234) #set random number seed for cross validation
+train.rows2 = createDataPartition(y = blood$DonatedMarch, p=0.7, list = FALSE) #70% in training
+train2 = blood[train.rows2,] #training dataset
+test2 = blood[-train.rows2,] #testing dataset
+```
+
+Create a classification tree using all of the predictor variables to predict “DonatedMarch” in the training set. Plot the tree.  
+```{r create classification tree for blood}
+tree3 = rpart(DonatedMarch ~., train2, method="class")
+fancyRpartPlot(tree3)
+```
+  
+Evaluate the complexity parameter  
+```{r print cp for blood}
+printcp(tree3)
+plotcp(tree3)
+```
+
+### Task 10:  
+  
+Prune the tree back to the optimal cp value, make predictions, and use the confusionMatrix function on the both training and testing sets. Comment on the quality of the predictions.
+
+**Comments on quality of predictions:** the accuracy level of the predictions on the training data is 0.813 which is better than the accuracy of the naive model with no information rate (i.e., if we had just predicted no for everything) of 0.7615 and the p-value of the improvement in accuracy is statistically significant.  However, the accuracy level of the predictions on the testing data was 0.7543, which is actually worse than the naive model, indicating this is not a very good predictive model beyond the training data. 
+
+Prune the tree (at minimum cross-validated error)  
+```{r prune the tree to cp for min cross-validated error for blood}
+tree4 = prune(tree3,cp= tree3$cptable[which.min(tree3$cptable[,"xerror"]),"CP"])
+```
+
+
+Predictions on training set  
+```{r prediction for blood training set}
+treepred2 = predict(tree4, train2, type = "class")
+head(treepred2)
+```
+  
+Caret confusion matrix and accuracy, etc. calcs for training data
+```{r create confusion matrics and determine accuracy etc. for blood training set}
+confusionMatrix(treepred2,train2$DonatedMarch,positive="Yes") #predictions first then actual
+```
+
+Predictions on testing set  
+```{r prediction for blood testing set}
+treepred2_test = predict(tree4, newdata=test2, type = "class")
+head(treepred2_test)
+```
+  
+Caret confusion matrix and accuracy, etc. calcs for training data
+```{r create confusion matrics and determine accuracy etc. for blood testing set}
+confusionMatrix(treepred2_test,test2$DonatedMarch,positive="Yes") #predictions first then actual
+```
